@@ -1,25 +1,147 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+title: PA1_template
+output: md_document
 ---
+***
+  
+###Loading Packages Used  
+The packages used in this document  
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(lubridate)
+library(impute)
+library(timeDate)
+```
+***  
+###Reading In and Processing Data  
+The CSV file is read in and the dataframe converted to a table.    
+  
+```{r}
+steps <- read.csv("activity.csv") %>% tbl_df()
+```
+  
+The classes of the date and interval data are converted to date/time and factor classes respectively.   
+  
+```{r}
+steps$date <- as.Date(steps$date)
+steps$interval <- as.factor(steps$interval)
+```
+  
+The data is further processed by removing the rows containing NAs and two tables are produced that are grouuped by date or interval.  
 
+```{r}
+steps_narm <- filter(steps,!is.na(steps))
+by_day <- group_by(steps_narm, date)
+by_int <- group_by(steps_narm, interval)
+```
+***
+### Histogram of Total Steps Each Day  
 
-## Loading and preprocessing the data
+The total steps made for each day are calculated.  
+```{R}
+sumday <- summarise(by_day, sum(steps))
+```
+The resulting data is used to create a barchart.  
+```{R}
+names(sumday) <- c("date", "total_steps")
+sd <- ggplot(sumday, aes(x=date, y = total_steps))
+sd + geom_bar(stat = "identity") + labs(title = "Total Steps per Day", y = "Total Steps", x = "Date")
+```
+  
+***
 
+###Mean and Median Steps in a Day    
 
+The mean and median steps per day over the data are calculated and shown respectively.
+```{r}
+names(sumday) <- c("date", "sum")
+mean(sumday$sum)
+median(sumday$sum)
 
-## What is mean total number of steps taken per day?
+```
+  
+***
 
+###Time Series Plot of Average Number of Steps Taken  
 
+The average steps taken per interval over all days  are calculated and a time series gaph created.
 
-## What is the average daily activity pattern?
+```{r}
+mi <- summarise(by_int, mean = mean(steps))
+mint <- ggplot(mi, aes(x=interval, y = mean, group = 1))
+mint + geom_line() + 
+  labs(title = "Average Steps Taken Each Interval Over All Days", y = "Mean Steps", x = "Interval")
+  
 
+```
+  
+***  
 
+### The 5 min Interval That on Average has the Highest Number of Steps
+The interval with the maxium average steps is calculated and shown.  
+```{r}
+mi[order(mi$mean, decreasing = T)[1],]
 
-## Imputing missing values
+```
+  
+***  
 
+### A Strategy for Filling in NAs 
+The number of missing values is calculated and shown.  
+```{r}
+sum(is.na(steps$steps))
+```
 
+The impute.km() function from the Impute package is used to fill in the missing values. This method uses nearest neighbours averaging to replace missing values. In this block of code a matrix with the new data is created and put it into the imp_steps table.
 
-## Are there differences in activity patterns between weekdays and weekends?
+```{r}
+temp_steps <- steps[, c(1,3)] %>% as.matrix()
+imp_matrix <- impute.knn(temp_steps)
+imp_steps <- steps
+imp_steps$steps <- imp_matrix$data
+```
+  
+***
+
+### Histogram of Total Steps Each Day After NAs Filled  
+The total steps taken each day is calculated with the imputed dataset and then used to create a barchart showing the results.
+
+```{r}
+sum_imp <- imp_steps %>% group_by(date) %>% summarise(sum(steps))
+names(sum_imp) <- c("date", "total_steps")
+sum_imp$total_steps <- as.integer(sum_imp$total_steps)
+si <- ggplot(sum_imp, aes(x=date, y = total_steps))
+si + geom_bar(stat = "identity") + labs(title = "Total Steps per Day (Imputed Data)", y = "Total Steps", x = "Date")
+```
+  
+***  
+
+### Panel Plot Comparing the Average Number of Steps per Interval Across Weekdays and Weekends  
+To seperate the data into weekend and weekday data a column is added to the steps_narm table (original data minus missing values) showing when the data was collected. The weekday and weekend rows are then subsetted into two tables. The average steps for each interval are calculated for each table. The tables are then bound together and used to create a panel plot showing the average steps per interval across weekends and weekdays.  
+
+```{r}
+steps_narm$weekday <- isWeekday(steps_narm$date)
+steps_wkd <- filter(steps_narm, weekday == TRUE)
+steps_wke <- filter(steps_narm, weekday == FALSE)
+
+m_wd <- steps_wkd %>%group_by(interval) %>% summarise(mean(steps))
+m_wd$weekday <- "Weekday"
+
+m_we <- steps_wke %>%group_by(interval) %>% summarise(mean(steps))
+m_we$weekday <- "Weekend"
+
+m_wde <- bind_rows(m_wd, m_we)
+names(m_wde) <- c("interval", "mean_steps", "weekday")
+m_wde$weekday <- as.factor(m_wde$weekday)
+
+sw <- ggplot(m_wde, aes(x=interval, y = mean_steps, group = 1))
+sw + 
+  geom_line() + 
+  labs(title = "Mean Steps per Interval, Weekday vs Weekend", y = "Mean Steps", x ="Interval") + 
+  facet_grid(weekday~.)
+
+```
+
+The plot shows a difference in activity patterns between the week and weekend. During the week there is a spike of activty in the morning while during the weekend the ammount od steps taken is more consistant over the day.
